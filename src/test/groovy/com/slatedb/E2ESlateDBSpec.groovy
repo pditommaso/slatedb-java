@@ -47,21 +47,13 @@ class E2ESlateDBSpec extends Specification {
     
     def setupSpec() {
         s3Bucket = System.getProperty('slatedb.test.s3.bucket', 'slatedb-sdk-dev')
-        awsRegion = System.getProperty('slatedb.test.aws.region', 'us-east-1')
+        awsRegion = System.getProperty('slatedb.test.aws.region', 'eu-west-2')
         testKeyPrefix = "e2e-test-${System.currentTimeMillis()}"
         
-        // Get AWS credentials from system properties or environment
-        String accessKey = System.getProperty('slatedb.test.aws.accessKey') ?: System.getenv('AWS_ACCESS_KEY_ID')
-        String secretKey = System.getProperty('slatedb.test.aws.secretKey') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
-        
-        // Create AWS configuration
+        // Create AWS configuration (credentials are handled via environment variables)
         def awsConfigBuilder = AWSConfig.builder()
             .bucket(s3Bucket)
             .region(awsRegion)
-            
-        if (accessKey && secretKey) {
-            awsConfigBuilder.accessKey(accessKey).secretKey(secretKey)
-        }
         
         def awsConfig = awsConfigBuilder.build()
         
@@ -108,7 +100,7 @@ class E2ESlateDBSpec extends Specification {
             .build()
             
         when: "opening SlateDB with S3 configuration"
-        def db = SlateDB.open("/tmp/slatedb-e2e-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/basic-${System.currentTimeMillis()}", storeConfig, options)
         
         then: "database should be successfully opened"
         db != null
@@ -121,12 +113,13 @@ class E2ESlateDBSpec extends Specification {
     def "should perform basic CRUD operations with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
-        def db = SlateDB.open("/tmp/slatedb-e2e-crud-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/crud-${System.currentTimeMillis()}", storeConfig, options)
         
         when: "putting a key-value pair"
         def key1 = "test-key-1".getBytes()
         def value1 = "test-value-1".getBytes()
         db.put(key1, value1)
+        db.flush() // Ensure data is available for S3 backend
         
         then: "the value should be retrievable"
         def retrievedValue = db.get(key1)
@@ -135,6 +128,7 @@ class E2ESlateDBSpec extends Specification {
         when: "updating the value"
         def updatedValue1 = "updated-value-1".getBytes()
         db.put(key1, updatedValue1)
+        db.flush() // Ensure updated data is available
         
         then: "the updated value should be retrievable"
         def newRetrievedValue = db.get(key1)
@@ -155,10 +149,10 @@ class E2ESlateDBSpec extends Specification {
     def "should handle write batches with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
-        def db = SlateDB.open("/tmp/slatedb-e2e-batch-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/batch-${System.currentTimeMillis()}", storeConfig, options)
         
         and: "a write batch with multiple operations"
-        def batch = WriteBatch.create()
+        def batch = new WriteBatch()
         def key1 = "batch-key-1".getBytes()
         def key2 = "batch-key-2".getBytes()
         def key3 = "batch-key-3".getBytes()
@@ -171,8 +165,8 @@ class E2ESlateDBSpec extends Specification {
         batch.put(key3, value3)
         batch.delete(key2)  // Delete one of them
         
-        when: "applying the batch"
-        db.apply(batch)
+        when: "writing the batch"
+        db.write(batch)
         
         then: "the batch operations should be applied correctly"
         Arrays.equals(db.get(key1), value1)
@@ -188,7 +182,7 @@ class E2ESlateDBSpec extends Specification {
     def "should iterate over keys with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
-        def db = SlateDB.open("/tmp/slatedb-e2e-iter-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/iter-${System.currentTimeMillis()}", storeConfig, options)
         
         and: "multiple key-value pairs"
         def testData = [
@@ -203,14 +197,14 @@ class E2ESlateDBSpec extends Specification {
         }
         
         when: "creating an iterator"
-        def iterator = db.iterator()
+        def iterator = db.scan(null, null)
         def results = []
         
         while (iterator.hasNext()) {
             def kv = iterator.next()
             results.add([
-                key: new String(kv.key()), 
-                value: new String(kv.value())
+                key: new String(kv.getKey()), 
+                value: new String(kv.getValue())
             ])
         }
         
@@ -232,7 +226,7 @@ class E2ESlateDBSpec extends Specification {
     def "should handle large values with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
-        def db = SlateDB.open("/tmp/slatedb-e2e-large-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/large-${System.currentTimeMillis()}", storeConfig, options)
         
         and: "a large value (1MB)"
         def largeValue = ("x" * (1024 * 1024)).getBytes()  // 1MB byte array
@@ -256,7 +250,7 @@ class E2ESlateDBSpec extends Specification {
         def options = SlateDBOptions.builder()
             .flushInterval(java.time.Duration.ofMillis(500))  // More frequent flushes for concurrency test
             .build()
-        def db = SlateDB.open("/tmp/slatedb-e2e-concurrent-${System.currentTimeMillis()}", storeConfig, options)
+        def db = SlateDB.open("${testKeyPrefix}/concurrent-${System.currentTimeMillis()}", storeConfig, options)
         
         when: "performing concurrent operations"
         def threads = []
@@ -304,7 +298,7 @@ class E2ESlateDBSpec extends Specification {
     @Requires({ hasAwsCredentials() })
     def "should persist data across database reopenings with S3 backend"() {
         given: "a database path and test data"
-        def dbPath = "/tmp/slatedb-e2e-persist-${System.currentTimeMillis()}"
+        def dbPath = "${testKeyPrefix}/persist-${System.currentTimeMillis()}"
         def options = SlateDBOptions.builder().build()
         def testKey = "persist-key".getBytes()
         def testValue = "persist-value".getBytes()

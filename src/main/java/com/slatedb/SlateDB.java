@@ -5,6 +5,7 @@ import com.slatedb.exceptions.SlateDBException;
 import com.slatedb.exceptions.SlateDBInvalidArgumentException;
 import com.slatedb.internal.Native;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.slatedb.internal.SlateDBJacksonModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class SlateDB implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(SlateDB.class);
     private static final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            .registerModule(new SlateDBJacksonModule())
+            .setPropertyNamingStrategy(com.fasterxml.jackson.databind.PropertyNamingStrategies.SNAKE_CASE);
     
     private final MemorySegment handle;
     private final Arena arena;
@@ -213,6 +215,20 @@ public final class SlateDB implements AutoCloseable {
                     return new byte[0];
                 }
                 
+                // Check if the data segment has the expected size
+                if (dataPtr.byteSize() != dataLen) {
+                    logger.warn("Data segment size mismatch: expected {}, actual {}", dataLen, dataPtr.byteSize());
+                    if (dataPtr.byteSize() == 0) {
+                        // The native library returned a valid pointer but zero-sized segment
+                        // This likely means we need to create a properly sized segment from the pointer
+                        if (dataLen > 0) {
+                            dataPtr = dataPtr.reinterpret(dataLen);
+                        } else {
+                            return new byte[0];
+                        }
+                    }
+                }
+                
                 byte[] resultBytes = new byte[(int) dataLen];
                 MemorySegment.copy(dataPtr, ValueLayout.JAVA_BYTE, 0, resultBytes, 0, resultBytes.length);
                 
@@ -336,6 +352,8 @@ public final class SlateDB implements AutoCloseable {
     public Iterator scan(byte[] start, byte[] end, ScanOptions scanOptions) throws SlateDBException {
         checkNotClosed();
         
+        // Create a shared Arena that the iterator will own and close
+        Arena iterArena = Arena.ofShared();
         try (Arena opArena = Arena.ofConfined()) {
             MemorySegment startSegment = start != null ? 
                     opArena.allocateFrom(ValueLayout.JAVA_BYTE, start) : 
@@ -348,7 +366,7 @@ public final class SlateDB implements AutoCloseable {
             long endLen = end != null ? end.length : 0;
             
             MemorySegment scanOptsSegment = createScanOptions(opArena, scanOptions);
-            MemorySegment iteratorSegment = opArena.allocate(ValueLayout.ADDRESS);
+            MemorySegment iteratorSegment = iterArena.allocate(ValueLayout.ADDRESS);
             
             MemorySegment result = (MemorySegment) Native.slatedb_scan_with_options.invoke(
                     opArena, handle, startSegment, startLen, endSegment, endLen, 
@@ -356,10 +374,15 @@ public final class SlateDB implements AutoCloseable {
             
             Native.checkResult(result);
             
-            return new Iterator(iteratorSegment);
+            // Get the actual iterator handle
+            MemorySegment iterHandle = iteratorSegment.get(ValueLayout.ADDRESS, 0);
+            
+            return new Iterator(iterHandle, iterArena);
         } catch (SlateDBException e) {
+            iterArena.close();
             throw e;
         } catch (Throwable e) {
+            iterArena.close();
             throw new SlateDBException("Scan operation failed", e);
         }
     }
@@ -461,10 +484,10 @@ public final class SlateDB implements AutoCloseable {
         
         if (options == null) {
             segment.set(ValueLayout.JAVA_INT, 0, 0); // TTLDefault
-            segment.set(ValueLayout.JAVA_LONG, 4, 0L);
+            segment.set(ValueLayout.JAVA_LONG, 8, 0L);
         } else {
             segment.set(ValueLayout.JAVA_INT, 0, options.getTtlType().getValue());
-            segment.set(ValueLayout.JAVA_LONG, 4, options.getTtlValue());
+            segment.set(ValueLayout.JAVA_LONG, 8, options.getTtlValue());
         }
         
         return segment;
@@ -491,7 +514,7 @@ public final class SlateDB implements AutoCloseable {
         segment.set(ValueLayout.JAVA_BOOLEAN, 4, options.isDirty());
         segment.set(ValueLayout.JAVA_LONG, 8, options.getReadAheadBytes());
         segment.set(ValueLayout.JAVA_BOOLEAN, 16, options.isCacheBlocks());
-        segment.set(ValueLayout.JAVA_LONG, 20, options.getMaxFetchTasks());
+        segment.set(ValueLayout.JAVA_LONG, 24, options.getMaxFetchTasks()); // Changed from 20 to 24 for proper alignment
         return segment;
     }
 }

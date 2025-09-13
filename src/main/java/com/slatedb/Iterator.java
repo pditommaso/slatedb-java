@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class Iterator implements AutoCloseable {
     private final MemorySegment handle;
+    private final Arena arena;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private KeyValue nextItem = null;
     private boolean hasNextCached = false;
@@ -43,9 +44,22 @@ public final class Iterator implements AutoCloseable {
      * scan operations on SlateDB and DbReader instances.</p>
      * 
      * @param handle the native iterator handle
+     * @param arena the arena that owns the iterator memory
+     */
+    Iterator(MemorySegment handle, Arena arena) {
+        this.handle = handle;
+        this.arena = arena;
+    }
+    
+    /**
+     * Creates a new Iterator with the given native handle and no arena management.
+     * Used for backward compatibility.
+     * 
+     * @param handle the native iterator handle
      */
     Iterator(MemorySegment handle) {
         this.handle = handle;
+        this.arena = null;
     }
     
     /**
@@ -112,7 +126,7 @@ public final class Iterator implements AutoCloseable {
             MemorySegment keySegment = opArena.allocateFrom(ValueLayout.JAVA_BYTE, key);
             
             MemorySegment result = (MemorySegment) Native.slatedb_iterator_seek.invoke(
-                    handle, keySegment, (long) key.length);
+                    opArena, handle, keySegment, (long) key.length);
             
             Native.checkResult(result);
             
@@ -135,12 +149,16 @@ public final class Iterator implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            try {
-                MemorySegment result = (MemorySegment) Native.slatedb_iterator_close.invoke(handle);
+            try (Arena closeArena = Arena.ofConfined()) {
+                MemorySegment result = (MemorySegment) Native.slatedb_iterator_close.invoke(closeArena, handle);
                 Native.checkResult(result);
             } catch (Throwable e) {
                 // Log but don't throw on close
                 System.err.println("Warning: Error closing iterator: " + e.getMessage());
+            } finally {
+                if (arena != null && arena.scope().isAlive()) {
+                    arena.close();
+                }
             }
         }
     }
@@ -167,7 +185,7 @@ public final class Iterator implements AutoCloseable {
             MemorySegment kvSegment = opArena.allocate(Native.CSdbKeyValue_LAYOUT);
             
             MemorySegment result = (MemorySegment) Native.slatedb_iterator_next.invoke(
-                    handle, kvSegment);
+                    opArena, handle, kvSegment);
             
             try {
                 Native.checkResult(result);
@@ -183,10 +201,16 @@ public final class Iterator implements AutoCloseable {
                 }
                 
                 byte[] keyBytes = new byte[(int) keyLen];
+                if (keyPtr.byteSize() != keyLen && keyPtr.byteSize() == 0 && keyLen > 0) {
+                    keyPtr = keyPtr.reinterpret(keyLen);
+                }
                 MemorySegment.copy(keyPtr, ValueLayout.JAVA_BYTE, 0, keyBytes, 0, keyBytes.length);
                 
                 byte[] valueBytes = new byte[(int) valueLen];
                 if (!valuePtr.equals(MemorySegment.NULL) && valueLen > 0) {
+                    if (valuePtr.byteSize() != valueLen && valuePtr.byteSize() == 0 && valueLen > 0) {
+                        valuePtr = valuePtr.reinterpret(valueLen);
+                    }
                     MemorySegment.copy(valuePtr, ValueLayout.JAVA_BYTE, 0, valueBytes, 0, valueBytes.length);
                 }
                 

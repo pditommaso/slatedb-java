@@ -42,7 +42,7 @@ public final class WriteBatch implements AutoCloseable {
     public WriteBatch() throws SlateDBException {
         try (Arena opArena = Arena.ofConfined()) {
             MemorySegment batchPtr = opArena.allocate(ValueLayout.ADDRESS);
-            MemorySegment result = (MemorySegment) Native.slatedb_write_batch_new.invoke(batchPtr);
+            MemorySegment result = (MemorySegment) Native.slatedb_write_batch_new.invoke(opArena, batchPtr);
             Native.checkResult(result);
             this.handle = batchPtr.get(ValueLayout.ADDRESS, 0);
             
@@ -91,12 +91,12 @@ public final class WriteBatch implements AutoCloseable {
             MemorySegment result;
             if (putOptions == null) {
                 result = (MemorySegment) Native.slatedb_write_batch_put.invoke(
-                        handle, keySegment, (long) key.length, 
+                        opArena, handle, keySegment, (long) key.length, 
                         valueSegment, (long) value.length);
             } else {
                 MemorySegment putOptsSegment = createPutOptions(opArena, putOptions);
                 result = (MemorySegment) Native.slatedb_write_batch_put_with_options.invoke(
-                        handle, keySegment, (long) key.length, 
+                        opArena, handle, keySegment, (long) key.length, 
                         valueSegment, (long) value.length, putOptsSegment);
             }
             
@@ -122,7 +122,7 @@ public final class WriteBatch implements AutoCloseable {
             MemorySegment keySegment = opArena.allocateFrom(ValueLayout.JAVA_BYTE, key);
             
             MemorySegment result = (MemorySegment) Native.slatedb_write_batch_delete.invoke(
-                    handle, keySegment, (long) key.length);
+                    opArena, handle, keySegment, (long) key.length);
             
             Native.checkResult(result);
         } catch (Throwable e) {
@@ -139,8 +139,8 @@ public final class WriteBatch implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            try {
-                MemorySegment result = (MemorySegment) Native.slatedb_write_batch_close.invoke(handle);
+            try (Arena closeArena = Arena.ofConfined()) {
+                MemorySegment result = (MemorySegment) Native.slatedb_write_batch_close.invoke(closeArena, handle);
                 Native.checkResult(result);
             } catch (Throwable e) {
                 // Log but don't throw on close
@@ -215,10 +215,10 @@ public final class WriteBatch implements AutoCloseable {
         
         if (options == null) {
             segment.set(ValueLayout.JAVA_INT, 0, 0); // TTLDefault
-            segment.set(ValueLayout.JAVA_LONG, 4, 0L);
+            segment.set(ValueLayout.JAVA_LONG, 8, 0L);
         } else {
             segment.set(ValueLayout.JAVA_INT, 0, options.getTtlType().getValue());
-            segment.set(ValueLayout.JAVA_LONG, 4, options.getTtlValue());
+            segment.set(ValueLayout.JAVA_LONG, 8, options.getTtlValue());
         }
         
         return segment;

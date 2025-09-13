@@ -140,6 +140,11 @@ task e2eTest(type: Test) {
     jvmArgs test.jvmArgs
     systemProperties test.systemProperties
     
+    // Set environment variables for native library
+    environment 'AWS_ACCESS_KEY_ID', findProperty('slatedb.test.aws.accessKey') ?: System.getenv('AWS_ACCESS_KEY_ID') 
+    environment 'AWS_SECRET_ACCESS_KEY', findProperty('slatedb.test.aws.secretKey') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
+    environment 'AWS_DEFAULT_REGION', findProperty('slatedb.test.aws.region') ?: 'eu-west-2'
+    
     // Require AWS configuration
     doFirst {
         def hasAwsCreds = findProperty('slatedb.test.aws.accessKey') != null || 

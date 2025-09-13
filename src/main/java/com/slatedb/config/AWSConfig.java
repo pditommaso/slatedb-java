@@ -1,5 +1,6 @@
 package com.slatedb.config;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.Duration;
 import java.util.Objects;
 
@@ -58,6 +59,7 @@ public final class AWSConfig {
      * 
      * @return the access key, or null if not specified
      */
+    @JsonIgnore
     public String getAccessKey() {
         return accessKey;
     }
@@ -67,6 +69,7 @@ public final class AWSConfig {
      * 
      * @return the secret key, or null if not specified
      */
+    @JsonIgnore
     public String getSecretKey() {
         return secretKey;
     }

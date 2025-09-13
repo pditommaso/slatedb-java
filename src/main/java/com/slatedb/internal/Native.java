@@ -333,7 +333,7 @@ public final class Native {
         
         if (errorCode != 0) {
             MemorySegment messagePtr = (MemorySegment) CSdbResult_message.get(result, 0);
-            String message = messagePtr.equals(MemorySegment.NULL) ? "Unknown error" : 
+            String message = messagePtr.equals(MemorySegment.NULL) || messagePtr.byteSize() == 0 ? "Unknown error" : 
                 messagePtr.getString(0);
             
             try {
