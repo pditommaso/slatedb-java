@@ -1,0 +1,260 @@
+plugins {
+    id 'java-library'
+    id 'groovy'
+    id 'maven-publish'
+}
+
+group = 'com.slatedb'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(24)
+    }
+    sourceCompatibility = 24
+    targetCompatibility = 24
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Production dependencies (keep minimal)
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.16.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.0'
+    
+    // Test dependencies
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-4.0'
+    testImplementation 'org.spockframework:spock-junit4:2.3-groovy-4.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'ch.qos.logback:logback-classic:1.4.11'
+    
+    // Groovy for Spock tests
+    testImplementation 'org.apache.groovy:groovy:4.0.28'
+}
+
+// Go bindings library integration  
+def slatedbGoPath = '../slatedb-upstream/slatedb-go'
+def workspaceTargetPath = '../slatedb-upstream/target/release'
+
+task buildGoBindings(type: Exec) {
+    description = 'Build Go bindings native library using Cargo (if upstream available)'
+    workingDir slatedbGoPath
+    
+    // Use different commands based on OS
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        commandLine 'cmd', '/c', 'cargo', 'build', '--release'
+    } else {
+        commandLine 'cargo', 'build', '--release'
+    }
+    
+    // Only run if Go bindings Cargo.toml exists
+    onlyIf { file("${slatedbGoPath}/Cargo.toml").exists() }
+}
+
+task copyGoBindingsLib(type: Copy, dependsOn: buildGoBindings) {
+    description = 'Copy Go bindings native library to resources directory'
+    
+    from workspaceTargetPath
+    into 'src/main/resources/native'
+    
+    // Copy platform-specific Go bindings libraries
+    include '**/libslatedb_go.so'     // Linux
+    include '**/libslatedb_go.dylib'  // macOS
+    include '**/slatedb_go.dll'       // Windows
+    
+    // Keep original names since Java FFI will load by name
+    
+    // Only copy if we actually built or if upstream target exists
+    onlyIf { buildGoBindings.didWork || file(workspaceTargetPath).exists() }
+}
+
+// Ensure Go bindings library is built before compiling Java
+compileJava {
+    dependsOn copyGoBindingsLib
+    
+    // Enable Java FFI preview features
+    options.compilerArgs.addAll([
+        '--enable-preview'
+    ])
+}
+
+// Ensure resources are processed after Go bindings library is copied
+processResources {
+    dependsOn copyGoBindingsLib
+}
+
+compileTestJava {
+    // Enable Java FFI preview features for tests
+    options.compilerArgs.addAll([
+        '--enable-preview'
+    ])
+}
+
+test {
+    useJUnitPlatform()
+    
+    // Enable Java FFI preview features
+    jvmArgs '--enable-preview'
+    
+    // Configure test properties for E2E tests
+    systemProperty 'slatedb.test.s3.bucket', 
+                   findProperty('slatedb.test.s3.bucket') ?: 'slatedb-sdk-dev'
+    systemProperty 'slatedb.test.aws.region', 
+                   findProperty('slatedb.test.aws.region') ?: 'us-east-1'
+    
+    // AWS credentials from environment or properties
+    if (findProperty('slatedb.test.aws.access.key')) {
+        systemProperty 'slatedb.test.aws.access.key', findProperty('slatedb.test.aws.access.key')
+    }
+    if (findProperty('slatedb.test.aws.secret.key')) {
+        systemProperty 'slatedb.test.aws.secret.key', findProperty('slatedb.test.aws.secret.key')
+    }
+    
+    // Test configuration
+    systemProperty 'java.library.path', file('src/main/resources/native').absolutePath
+    
+    // Test output
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat = 'full'
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+    }
+}
+
+// Separate task for E2E tests that require AWS credentials
+task e2eTest(type: Test) {
+    description = 'Run end-to-end tests with AWS S3 integration'
+    useJUnitPlatform {
+        includeTags 'e2e'
+    }
+    
+    // Inherit test configuration
+    jvmArgs test.jvmArgs
+    systemProperties test.systemProperties
+    
+    // Require AWS configuration
+    doFirst {
+        def hasAwsCreds = findProperty('slatedb.test.aws.access.key') != null || 
+                         System.getenv('AWS_ACCESS_KEY_ID') != null
+        
+        if (!hasAwsCreds) {
+            throw new Exception(
+                'E2E tests require AWS credentials. Set via:\n' +
+                '  - System properties: -Pslatedb.test.aws.access.key=... -Pslatedb.test.aws.secret.key=...\n' +
+                '  - Environment variables: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...'
+            )
+        }
+    }
+}
+
+// Unit tests only (exclude E2E)
+task unitTest(type: Test) {
+    description = 'Run unit tests only (no E2E tests)'
+    useJUnitPlatform {
+        excludeTags 'e2e'
+    }
+    
+    // Inherit test configuration
+    jvmArgs test.jvmArgs
+    systemProperties test.systemProperties
+}
+
+// Clean task to remove native artifacts
+clean {
+    doLast {
+        delete 'src/main/resources/native'
+    }
+}
+
+// Source and target compatibility
+compileJava {
+    sourceCompatibility = '24'
+    targetCompatibility = '24'
+}
+
+compileTestJava {
+    sourceCompatibility = '24'
+    targetCompatibility = '24'
+}
+
+// Javadoc configuration
+javadoc {
+    options.addStringOption('-enable-preview', '-quiet')
+    
+    if (JavaVersion.current().isJava9Compatible()) {
+        options.addBooleanOption('html5', true)
+    }
+}
+
+// Publishing configuration
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            
+            pom {
+                name = 'SlateDB Java Client'
+                description = 'Java client for SlateDB key-value database using Foreign Function Interface'
+                url = 'https://github.com/slatedb/slatedb'
+                
+                licenses {
+                    license {
+                        name = 'Apache License 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+                
+                developers {
+                    developer {
+                        name = 'SlateDB Team'
+                        url = 'https://github.com/slatedb'
+                    }
+                }
+                
+                scm {
+                    connection = 'scm:git:https://github.com/slatedb/slatedb.git'
+                    developerConnection = 'scm:git:ssh://github.com/slatedb/slatedb.git'
+                    url = 'https://github.com/slatedb/slatedb'
+                }
+            }
+        }
+    }
+}
+
+// Wrapper task
+wrapper {
+    gradleVersion = '8.14.3'
+    distributionType = Wrapper.DistributionType.ALL
+}
+
+// Task to display project information
+task info {
+    description = 'Display project information'
+    doLast {
+        println "SlateDB Java Client"
+        println "=================="
+        println "Version: $version"
+        println "Group: $group"
+        println "Java Version: ${java.toolchain.languageVersion.get()}"
+        println ""
+        println "Available tasks:"
+        println "  build          - Build the project"
+        println "  test           - Run all tests"
+        println "  unitTest       - Run unit tests only"
+        println "  e2eTest        - Run E2E tests (requires AWS credentials)"
+        println "  buildGoBindings - Build Go bindings native library"
+        println "  clean          - Clean build artifacts"
+        println ""
+        println "E2E Test Configuration:"
+        println "  S3 Bucket: ${findProperty('slatedb.test.s3.bucket') ?: 'slatedb-sdk-dev'}"
+        println "  AWS Region: ${findProperty('slatedb.test.aws.region') ?: 'us-east-1'}"
+        println "  AWS Creds: ${findProperty('slatedb.test.aws.access.key') ? 'Configured' : 'Not configured'}"
+    }
+}
