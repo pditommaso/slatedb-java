@@ -26,6 +26,7 @@ dependencies {
     implementation 'org.slf4j:slf4j-api:2.0.9'
     implementation 'com.fasterxml.jackson.core:jackson-core:2.16.0'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.0'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.0'
     
     // Test dependencies
     testImplementation 'org.spockframework:spock-core:2.3-groovy-4.0'

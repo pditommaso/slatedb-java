@@ -50,11 +50,20 @@ class E2ESlateDBSpec extends Specification {
         awsRegion = System.getProperty('slatedb.test.aws.region', 'us-east-1')
         testKeyPrefix = "e2e-test-${System.currentTimeMillis()}"
         
+        // Get AWS credentials from system properties or environment
+        String accessKey = System.getProperty('slatedb.test.aws.accessKey') ?: System.getenv('AWS_ACCESS_KEY_ID')
+        String secretKey = System.getProperty('slatedb.test.aws.secretKey') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
+        
         // Create AWS configuration
-        def awsConfig = AWSConfig.builder()
+        def awsConfigBuilder = AWSConfig.builder()
             .bucket(s3Bucket)
             .region(awsRegion)
-            .build()
+            
+        if (accessKey && secretKey) {
+            awsConfigBuilder.accessKey(accessKey).secretKey(secretKey)
+        }
+        
+        def awsConfig = awsConfigBuilder.build()
         
         // Create S3 store configuration
         storeConfig = StoreConfig.builder()
@@ -74,13 +83,28 @@ class E2ESlateDBSpec extends Specification {
         println "E2E tests completed. Test data in S3 under prefix: ${testKeyPrefix}"
     }
 
+    def "should open and close SlateDB with local backend"() {
+        given: "SlateDB options for local backend"
+        def localStoreConfig = StoreConfig.local()
+        def options = SlateDBOptions.builder()
+            .flushInterval(java.time.Duration.ofMillis(1000))
+            .build()
+            
+        when: "opening SlateDB with local configuration"
+        def db = SlateDB.open("/tmp/slatedb-e2e-local-${System.currentTimeMillis()}", localStoreConfig, options)
+        
+        then: "database should be successfully opened"
+        db != null
+        
+        cleanup:
+        db?.close()
+    }
+
     @Requires({ hasAwsCredentials() })
     def "should open and close SlateDB with S3 backend"() {
         given: "SlateDB options for S3 backend"
         def options = SlateDBOptions.builder()
             .flushInterval(java.time.Duration.ofMillis(1000))
-            .manifestPollInterval(java.time.Duration.ofMillis(1000))
-            .minFilterKeys(100)
             .build()
             
         when: "opening SlateDB with S3 configuration"

@@ -1,5 +1,7 @@
 package com.slatedb.config;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 /**
  * Enumeration of supported object storage providers for SlateDB.
  */
@@ -27,6 +29,7 @@ public enum Provider {
      * 
      * @return the provider string value
      */
+    @JsonValue
     public String getValue() {
         return value;
     }

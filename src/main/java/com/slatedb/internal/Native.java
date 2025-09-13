@@ -17,6 +17,7 @@ public final class Native {
     // Memory layouts for C structures
     public static final MemoryLayout CSdbResult_LAYOUT = MemoryLayout.structLayout(
         ValueLayout.JAVA_INT.withName("error"),
+        MemoryLayout.paddingLayout(4), // Padding for 8-byte alignment on 64-bit systems
         ValueLayout.ADDRESS.withName("message")
     ).withName("CSdbResult");
     
@@ -36,6 +37,7 @@ public final class Native {
     
     public static final MemoryLayout CSdbPutOptions_LAYOUT = MemoryLayout.structLayout(
         ValueLayout.JAVA_INT.withName("ttl_type"),
+        MemoryLayout.paddingLayout(4), // Padding for 8-byte alignment
         ValueLayout.JAVA_LONG.withName("ttl_value")
     ).withName("CSdbPutOptions");
     
@@ -51,8 +53,10 @@ public final class Native {
     public static final MemoryLayout CSdbScanOptions_LAYOUT = MemoryLayout.structLayout(
         ValueLayout.JAVA_INT.withName("durability_filter"),
         ValueLayout.JAVA_BOOLEAN.withName("dirty"),
+        MemoryLayout.paddingLayout(3), // Padding after boolean to align long to 8 bytes
         ValueLayout.JAVA_LONG.withName("read_ahead_bytes"),
         ValueLayout.JAVA_BOOLEAN.withName("cache_blocks"),
+        MemoryLayout.paddingLayout(7), // Padding after boolean to align long to 8 bytes  
         ValueLayout.JAVA_LONG.withName("max_fetch_tasks")
     ).withName("CSdbScanOptions");
     
@@ -108,17 +112,20 @@ public final class Native {
             
             // Initialize method handles
             slatedb_init_logging = findFunction("slatedb_init_logging",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS),
+                true);
                 
             slatedb_open = findFunction("slatedb_open", 
                 FunctionDescriptor.of(CSdbHandle_LAYOUT,
                     ValueLayout.ADDRESS,  // path
                     ValueLayout.ADDRESS,  // store_config_json  
                     ValueLayout.ADDRESS   // options_json
-                ));
+                ),
+                true);
                 
             slatedb_close = findFunction("slatedb_close",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, CSdbHandle_LAYOUT));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, CSdbHandle_LAYOUT),
+                true);
                 
             slatedb_put_with_options = findFunction("slatedb_put_with_options",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -129,7 +136,8 @@ public final class Native {
                     ValueLayout.JAVA_LONG,  // value_len
                     ValueLayout.ADDRESS,    // put_options
                     ValueLayout.ADDRESS     // write_options
-                ));
+                ),
+                true);
                 
             slatedb_get_with_options = findFunction("slatedb_get_with_options",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -138,7 +146,8 @@ public final class Native {
                     ValueLayout.JAVA_LONG,  // key_len
                     ValueLayout.ADDRESS,    // read_options
                     ValueLayout.ADDRESS     // value_out
-                ));
+                ),
+                true);
                 
             slatedb_delete_with_options = findFunction("slatedb_delete_with_options",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -146,10 +155,12 @@ public final class Native {
                     ValueLayout.ADDRESS,    // key
                     ValueLayout.JAVA_LONG,  // key_len
                     ValueLayout.ADDRESS     // write_options
-                ));
+                ),
+                true);
                 
             slatedb_flush = findFunction("slatedb_flush",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, CSdbHandle_LAYOUT));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, CSdbHandle_LAYOUT),
+                true);
                 
             slatedb_scan_with_options = findFunction("slatedb_scan_with_options",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -160,11 +171,13 @@ public final class Native {
                     ValueLayout.JAVA_LONG,  // end_len
                     ValueLayout.ADDRESS,    // options
                     ValueLayout.ADDRESS     // iter_out
-                ));
+                ),
+                true);
                 
             // WriteBatch functions
             slatedb_write_batch_new = findFunction("slatedb_write_batch_new",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS),
+                true);
                 
             slatedb_write_batch_put = findFunction("slatedb_write_batch_put",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -173,7 +186,8 @@ public final class Native {
                     ValueLayout.JAVA_LONG,  // key_len
                     ValueLayout.ADDRESS,    // value
                     ValueLayout.JAVA_LONG   // value_len
-                ));
+                ),
+                true);
                 
             slatedb_write_batch_put_with_options = findFunction("slatedb_write_batch_put_with_options",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
@@ -183,41 +197,48 @@ public final class Native {
                     ValueLayout.ADDRESS,    // value
                     ValueLayout.JAVA_LONG,  // value_len
                     ValueLayout.ADDRESS     // options
-                ));
+                ),
+                true);
                 
             slatedb_write_batch_delete = findFunction("slatedb_write_batch_delete",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
                     ValueLayout.ADDRESS,    // batch
                     ValueLayout.ADDRESS,    // key
                     ValueLayout.JAVA_LONG   // key_len
-                ));
+                ),
+                true);
                 
             slatedb_write_batch_write = findFunction("slatedb_write_batch_write",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
                     CSdbHandle_LAYOUT,      // handle
                     ValueLayout.ADDRESS,    // batch
                     ValueLayout.ADDRESS     // options
-                ));
+                ),
+                true);
                 
             slatedb_write_batch_close = findFunction("slatedb_write_batch_close",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS),
+                true);
                 
             // Iterator functions
             slatedb_iterator_next = findFunction("slatedb_iterator_next",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
                     ValueLayout.ADDRESS,    // iter
                     ValueLayout.ADDRESS     // kv_out
-                ));
+                ),
+                true);
                 
             slatedb_iterator_seek = findFunction("slatedb_iterator_seek",
                 FunctionDescriptor.of(CSdbResult_LAYOUT,
                     ValueLayout.ADDRESS,    // iter
                     ValueLayout.ADDRESS,    // key
                     ValueLayout.JAVA_LONG   // key_len
-                ));
+                ),
+                true);
                 
             slatedb_iterator_close = findFunction("slatedb_iterator_close",
-                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS));
+                FunctionDescriptor.of(CSdbResult_LAYOUT, ValueLayout.ADDRESS),
+                true);
                 
             // Memory management functions
             slatedb_free_result = findFunction("slatedb_free_result",
@@ -232,9 +253,19 @@ public final class Native {
     }
     
     private static MethodHandle findFunction(String name, FunctionDescriptor descriptor) {
-        return LIBRARY_LOOKUP.find(name)
+        return findFunction(name, descriptor, false);
+    }
+    
+    private static MethodHandle findFunction(String name, FunctionDescriptor descriptor, boolean needsAllocator) {
+        var handle = LIBRARY_LOOKUP.find(name)
             .map(addr -> LINKER.downcallHandle(addr, descriptor))
             .orElseThrow(() -> new UnsatisfiedLinkError("Cannot find native function: " + name));
+        
+        if (needsAllocator) {
+            // Bind the allocator for functions that need it
+            return handle;
+        }
+        return handle;
     }
     
     private static String findNativeLibrary() {
@@ -280,7 +311,7 @@ public final class Native {
                 levelPtr = arena.allocateFrom(level);
             }
             
-            MemorySegment result = (MemorySegment) slatedb_init_logging.invoke(levelPtr);
+            MemorySegment result = (MemorySegment) slatedb_init_logging.invoke(arena, levelPtr);
             int errorCode = (int) CSdbResult_error.get(result, 0);
             
             if (errorCode != 0) {

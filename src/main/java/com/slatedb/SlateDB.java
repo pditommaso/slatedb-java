@@ -41,7 +41,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class SlateDB implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(SlateDB.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
     
     private final MemorySegment handle;
     private final Arena arena;
@@ -84,21 +85,36 @@ public final class SlateDB implements AutoCloseable {
                     arena.allocateFrom(serializeOptions(options)) : 
                     MemorySegment.NULL;
             
-            // Open database
-            MemorySegment handle = (MemorySegment) Native.slatedb_open.invoke(
-                    pathSegment, storeConfigJson, optionsJson);
+            // Open database - function returns CSdbHandle struct directly
+            MemorySegment handleStruct = (MemorySegment) Native.slatedb_open.invoke(
+                    arena, pathSegment, storeConfigJson, optionsJson);
             
-            // Check if handle is valid
-            MemorySegment handlePtr = handle.get(ValueLayout.ADDRESS, 0);
+            // Extract the actual pointer from the CSdbHandle struct
+            MemorySegment handlePtr = handleStruct.get(ValueLayout.ADDRESS, 0);
+            
             if (handlePtr.equals(MemorySegment.NULL)) {
-                arena.close();
-                throw new SlateDBException("Failed to open database");
+                try {
+                    if (arena.scope().isAlive()) {
+                        arena.close();
+                    }
+                } catch (Exception closeException) {
+                    // Ignore close exceptions
+                }
+                throw new SlateDBException("Failed to open database - handle pointer is NULL");
             }
             
-            return new SlateDB(handle, arena);
+            return new SlateDB(handleStruct, arena);
             
         } catch (Throwable e) {
-            arena.close();
+            try {
+                if (!arena.scope().isAlive()) {
+                    // Arena is already closed, don't try to close it again
+                } else {
+                    arena.close();
+                }
+            } catch (Exception closeException) {
+                // Ignore close exceptions in error handling
+            }
             throw new SlateDBException("Failed to open database", e);
         }
     }
@@ -141,7 +157,7 @@ public final class SlateDB implements AutoCloseable {
             MemorySegment writeOptsSegment = createWriteOptions(opArena, writeOptions);
             
             MemorySegment result = (MemorySegment) Native.slatedb_put_with_options.invoke(
-                    handle, keySegment, (long) key.length, 
+                    opArena, handle, keySegment, (long) key.length, 
                     valueSegment, (long) value.length,
                     putOptsSegment, writeOptsSegment);
             
@@ -184,7 +200,7 @@ public final class SlateDB implements AutoCloseable {
             MemorySegment valueSegment = opArena.allocate(Native.CSdbValue_LAYOUT);
             
             MemorySegment result = (MemorySegment) Native.slatedb_get_with_options.invoke(
-                    handle, keySegment, (long) key.length, readOptsSegment, valueSegment);
+                    opArena, handle, keySegment, (long) key.length, readOptsSegment, valueSegment);
             
             try {
                 Native.checkResult(result);
@@ -246,7 +262,7 @@ public final class SlateDB implements AutoCloseable {
             MemorySegment writeOptsSegment = createWriteOptions(opArena, writeOptions);
             
             MemorySegment result = (MemorySegment) Native.slatedb_delete_with_options.invoke(
-                    handle, keySegment, (long) key.length, writeOptsSegment);
+                    opArena, handle, keySegment, (long) key.length, writeOptsSegment);
             
             Native.checkResult(result);
         } catch (SlateDBException e) {
@@ -283,7 +299,7 @@ public final class SlateDB implements AutoCloseable {
             MemorySegment writeOptsSegment = createWriteOptions(opArena, writeOptions);
             
             MemorySegment result = (MemorySegment) Native.slatedb_write_batch_write.invoke(
-                    handle, batch.getHandle(), writeOptsSegment);
+                    opArena, handle, batch.getHandle(), writeOptsSegment);
             
             Native.checkResult(result);
             
@@ -335,7 +351,7 @@ public final class SlateDB implements AutoCloseable {
             MemorySegment iteratorSegment = opArena.allocate(ValueLayout.ADDRESS);
             
             MemorySegment result = (MemorySegment) Native.slatedb_scan_with_options.invoke(
-                    handle, startSegment, startLen, endSegment, endLen, 
+                    opArena, handle, startSegment, startLen, endSegment, endLen, 
                     scanOptsSegment, iteratorSegment);
             
             Native.checkResult(result);
@@ -359,8 +375,8 @@ public final class SlateDB implements AutoCloseable {
     public void flush() throws SlateDBException {
         checkNotClosed();
         
-        try {
-            MemorySegment result = (MemorySegment) Native.slatedb_flush.invoke(handle);
+        try (Arena flushArena = Arena.ofConfined()) {
+            MemorySegment result = (MemorySegment) Native.slatedb_flush.invoke(flushArena, handle);
             Native.checkResult(result);
         } catch (SlateDBException e) {
             throw e;
@@ -379,8 +395,10 @@ public final class SlateDB implements AutoCloseable {
     public void close() {
         if (closed.compareAndSet(false, true)) {
             try {
-                MemorySegment result = (MemorySegment) Native.slatedb_close.invoke(handle);
-                Native.checkResult(result);
+                try (Arena closeArena = Arena.ofConfined()) {
+                    MemorySegment result = (MemorySegment) Native.slatedb_close.invoke(closeArena, handle);
+                    Native.checkResult(result);
+                }
             } catch (Throwable e) {
                 logger.warn("Error closing database", e);
             } finally {
