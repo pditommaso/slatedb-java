@@ -1,6 +1,7 @@
 package com.slatedb;
 
 import com.slatedb.config.*;
+import com.slatedb.config.AWSConfig;
 import com.slatedb.exceptions.SlateDBException;
 import com.slatedb.exceptions.SlateDBInvalidArgumentException;
 import com.slatedb.internal.Native;
@@ -455,7 +456,36 @@ public final class SlateDB implements AutoCloseable {
     
     private static String serializeStoreConfig(StoreConfig config) throws SlateDBException {
         try {
-            return objectMapper.writeValueAsString(config);
+            // Create the JSON manually since Jackson mixins aren't working with @JsonIgnore
+            if (config.getProvider() == com.slatedb.config.Provider.LOCAL) {
+                return "{\"provider\":\"local\"}";
+            } else if (config.getProvider() == com.slatedb.config.Provider.AWS) {
+                AWSConfig awsConfig = config.getAws();
+                StringBuilder jsonBuilder = new StringBuilder();
+                jsonBuilder.append("{\"provider\":\"aws\",\"aws\":{");
+                
+                // Add bucket
+                jsonBuilder.append("\"bucket\":").append(awsConfig.getBucket() != null ? "\"" + awsConfig.getBucket() + "\"" : "null");
+                
+                // Add region
+                jsonBuilder.append(",\"region\":").append(awsConfig.getRegion() != null ? "\"" + awsConfig.getRegion() + "\"" : "null");
+                
+                // Add endpoint
+                jsonBuilder.append(",\"endpoint\":").append(awsConfig.getEndpoint() != null ? "\"" + awsConfig.getEndpoint() + "\"" : "null");
+                
+                // Add request_timeout 
+                jsonBuilder.append(",\"request_timeout\":").append(awsConfig.getRequestTimeout() != null ? "\"" + awsConfig.getRequestTimeout().toString() + "\"" : "null");
+                
+                jsonBuilder.append("}}");
+                
+                String json = jsonBuilder.toString();
+                logger.debug("StoreConfig JSON (for Go bindings): {}", json);
+                return json;
+            }
+            
+            throw new SlateDBException("Unsupported store provider: " + config.getProvider());
+        } catch (SlateDBException e) {
+            throw e;
         } catch (Throwable e) {
             throw new SlateDBException("Failed to serialize store configuration", e);
         }

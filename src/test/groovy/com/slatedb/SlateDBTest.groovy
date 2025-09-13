@@ -7,12 +7,13 @@ import spock.lang.TempDir
 import java.nio.file.Path
 
 /**
- * Comprehensive unit tests for SlateDB using Spock framework.
+ * Unit tests for SlateDB using Spock framework.
  * 
  * These tests verify the core functionality of the SlateDB Java client
- * including CRUD operations, batch operations, iterators, and configuration.
+ * including CRUD operations, batch operations, configuration, and error handling.
+ * Uses local backend for fast execution without requiring AWS credentials.
  */
-class SlateDBSpec extends Specification {
+class SlateDBTest extends Specification {
     
     @TempDir
     Path tempDir
@@ -23,7 +24,7 @@ class SlateDBSpec extends Specification {
         def dbPath = tempDir.resolve("test-db").toString()
         
         when:
-        def db = SlateDBTest.open(dbPath, storeConfig, null)
+        def db = SlateDB.open(dbPath, storeConfig, null)
         
         then:
         db != null
@@ -121,7 +122,7 @@ class SlateDBSpec extends Specification {
     def "should handle write batch operations"() {
         given:
         def db = createTestDB()
-        def batch = new WriteBatchTest()
+        def batch = new WriteBatch()
         
         when:
         batch.put("key1".bytes, "value1".bytes)
@@ -142,7 +143,7 @@ class SlateDBSpec extends Specification {
     def "should prevent batch reuse after write"() {
         given:
         def db = createTestDB()
-        def batch = new WriteBatchTest()
+        def batch = new WriteBatch()
         batch.put("key1".bytes, "value1".bytes)
         db.write(batch)
         
@@ -162,7 +163,7 @@ class SlateDBSpec extends Specification {
         def db = createTestDB()
         def key = "write-options-key".bytes
         def value = "write-options-value".bytes
-        def writeOptions = WriteOptions.fastWrite() // Non-durable write
+        def writeOptions = WriteOptions.builder().awaitDurable(false).build()
         
         when:
         db.put(key, value, null, writeOptions)
@@ -180,7 +181,7 @@ class SlateDBSpec extends Specification {
         def db = createTestDB()
         def key = "ttl-key".bytes
         def value = "ttl-value".bytes
-        def putOptions = PutOptions.noExpiry()
+        def putOptions = PutOptions.expireAfter(java.time.Duration.ofHours(1))
         
         when:
         db.put(key, value, putOptions, null)
@@ -198,7 +199,7 @@ class SlateDBSpec extends Specification {
         def db = createTestDB()
         def key = "read-options-key".bytes
         def value = "read-options-value".bytes
-        def readOptions = ReadOptions.eventualRead()
+        def readOptions = ReadOptions.builder().dirty(true).build()
         
         when:
         db.put(key, value)
@@ -223,10 +224,6 @@ class SlateDBSpec extends Specification {
         
         when:
         def iterator = db.scan("prefix:".bytes, "prefix;".bytes) // Scan prefix range
-        def results = []
-        
-        // Note: In a real implementation, we'd use hasNext() and next()
-        // For this test, we're just verifying iterator creation
         
         then:
         iterator != null
@@ -289,7 +286,10 @@ class SlateDBSpec extends Specification {
                 .bucket("test-bucket")
                 .region("us-east-1")
                 .build()
-        def storeConfig = StoreConfig.aws(awsConfig)
+        def storeConfig = StoreConfig.builder()
+                .provider(Provider.AWS)
+                .aws(awsConfig)
+                .build()
         
         when:
         def result = storeConfig.getProvider()
@@ -304,20 +304,116 @@ class SlateDBSpec extends Specification {
         def options = SlateDBOptions.builder()
                 .l0SstSizeBytes(64L * 1024 * 1024) // 64MB
                 .flushInterval(java.time.Duration.ofMillis(100))
-                .cacheFolder("/tmp/cache")
-                .sstBlockSize(SstBlockSize.SIZE_8_KIB)
                 .build()
         
         expect:
         options.getL0SstSizeBytes() == 64L * 1024 * 1024
         options.getFlushInterval() == java.time.Duration.ofMillis(100)
-        options.getCacheFolder() == "/tmp/cache"
-        options.getSstBlockSize() == SstBlockSize.SIZE_8_KIB
     }
     
-    private SlateDBTest createTestDB() {
+    def "should create AWS config with builder pattern"() {
+        given:
+        def awsConfig = AWSConfig.builder()
+                .bucket("test-bucket")
+                .region("us-east-1")
+                .build()
+        
+        expect:
+        awsConfig.getBucket() == "test-bucket"
+        awsConfig.getRegion() == "us-east-1"
+    }
+    
+    def "should create put options with builder pattern"() {
+        given:
+        def ttlDuration = java.time.Duration.ofHours(24)
+        def putOptions = PutOptions.expireAfter(ttlDuration)
+        
+        expect:
+        putOptions.getTtlType() == TTLType.EXPIRE_AFTER
+        putOptions.getTtlValue() == ttlDuration.toMillis()
+    }
+    
+    def "should create write options with builder pattern"() {
+        given:
+        def writeOptions = WriteOptions.builder()
+                .awaitDurable(true)
+                .build()
+        
+        expect:
+        writeOptions.isAwaitDurable() == true
+    }
+    
+    def "should create read options with builder pattern"() {
+        given:
+        def readOptions = ReadOptions.builder()
+                .durabilityFilter(DurabilityLevel.MEMORY)
+                .dirty(false)
+                .build()
+        
+        expect:
+        readOptions.getDurabilityFilter() == DurabilityLevel.MEMORY
+        readOptions.isDirty() == false
+    }
+    
+    def "should create scan options with builder pattern"() {
+        given:
+        def scanOptions = ScanOptions.builder()
+                .durabilityFilter(DurabilityLevel.MEMORY)
+                .dirty(false)
+                .readAheadBytes(4 * 1024 * 1024)
+                .cacheBlocks(true)
+                .maxFetchTasks(4)
+                .build()
+        
+        expect:
+        scanOptions.getDurabilityFilter() == DurabilityLevel.MEMORY
+        scanOptions.isDirty() == false
+        scanOptions.getReadAheadBytes() == 4 * 1024 * 1024
+        scanOptions.isCacheBlocks() == true
+        scanOptions.getMaxFetchTasks() == 4
+    }
+    
+    def "should validate null arguments"() {
+        when:
+        SlateDB.open(null, StoreConfig.local(), null)
+        
+        then:
+        thrown(NullPointerException)
+        
+        when:
+        SlateDB.open("/tmp/test", null, null)
+        
+        then:
+        thrown(NullPointerException)
+    }
+    
+    def "should handle WriteBatch lifecycle correctly"() {
+        given:
+        def batch = new WriteBatch()
+        
+        when:
+        batch.put("key1".bytes, "value1".bytes)
+        
+        then:
+        !batch.isClosed()
+        !batch.isConsumed()
+        
+        when:
+        batch.close()
+        
+        then:
+        batch.isClosed()
+        
+        when:
+        batch.put("key2".bytes, "value2".bytes)
+        
+        then:
+        thrown(SlateDBException)
+    }
+    
+    private SlateDB createTestDB() {
         def storeConfig = StoreConfig.local()
         def dbPath = tempDir.resolve("test-db-${UUID.randomUUID()}").toString()
-        return SlateDBTest.open(dbPath, storeConfig, null)
+        return SlateDB.open(dbPath, storeConfig, null)
     }
 }

@@ -1,6 +1,5 @@
 package com.slatedb.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.Duration;
 import java.util.Objects;
 
@@ -8,22 +7,18 @@ import java.util.Objects;
  * Configuration for AWS S3 object storage.
  * 
  * This class contains all the configuration options needed to connect to AWS S3
- * or S3-compatible object storage services.
+ * or S3-compatible object storage services, matching the Go bindings structure.
  */
 public final class AWSConfig {
     private final String bucket;
     private final String region;
     private final String endpoint;
-    private final String accessKey;
-    private final String secretKey;
     private final Duration requestTimeout;
     
     private AWSConfig(Builder builder) {
         this.bucket = builder.bucket;
         this.region = builder.region;
         this.endpoint = builder.endpoint;
-        this.accessKey = builder.accessKey;
-        this.secretKey = builder.secretKey;
         this.requestTimeout = builder.requestTimeout;
     }
     
@@ -55,26 +50,6 @@ public final class AWSConfig {
     }
     
     /**
-     * Gets the AWS access key ID.
-     * 
-     * @return the access key, or null if not specified
-     */
-    @JsonIgnore
-    public String getAccessKey() {
-        return accessKey;
-    }
-    
-    /**
-     * Gets the AWS secret access key.
-     * 
-     * @return the secret key, or null if not specified
-     */
-    @JsonIgnore
-    public String getSecretKey() {
-        return secretKey;
-    }
-    
-    /**
      * Gets the request timeout duration.
      * 
      * @return the timeout duration, or null if using default
@@ -102,8 +77,6 @@ public final class AWSConfig {
                 .bucket(bucket)
                 .region(region)
                 .endpoint(endpoint)
-                .accessKey(accessKey)
-                .secretKey(secretKey)
                 .requestTimeout(requestTimeout);
     }
     
@@ -116,14 +89,12 @@ public final class AWSConfig {
         return Objects.equals(bucket, that.bucket) &&
                Objects.equals(region, that.region) &&
                Objects.equals(endpoint, that.endpoint) &&
-               Objects.equals(accessKey, that.accessKey) &&
-               Objects.equals(secretKey, that.secretKey) &&
                Objects.equals(requestTimeout, that.requestTimeout);
     }
     
     @Override
     public int hashCode() {
-        return Objects.hash(bucket, region, endpoint, accessKey, secretKey, requestTimeout);
+        return Objects.hash(bucket, region, endpoint, requestTimeout);
     }
     
     @Override
@@ -132,8 +103,6 @@ public final class AWSConfig {
                 "bucket='" + bucket + '\'' +
                 ", region='" + region + '\'' +
                 ", endpoint='" + endpoint + '\'' +
-                ", accessKey='" + (accessKey != null ? "[REDACTED]" : null) + '\'' +
-                ", secretKey='" + (secretKey != null ? "[REDACTED]" : null) + '\'' +
                 ", requestTimeout=" + requestTimeout +
                 '}';
     }
@@ -145,8 +114,6 @@ public final class AWSConfig {
         private String bucket;
         private String region;
         private String endpoint;
-        private String accessKey;
-        private String secretKey;
         private Duration requestTimeout;
         
         private Builder() {}
@@ -181,28 +148,6 @@ public final class AWSConfig {
          */
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
-            return this;
-        }
-        
-        /**
-         * Sets the AWS access key ID.
-         * 
-         * @param accessKey the access key
-         * @return this builder
-         */
-        public Builder accessKey(String accessKey) {
-            this.accessKey = accessKey;
-            return this;
-        }
-        
-        /**
-         * Sets the AWS secret access key.
-         * 
-         * @param secretKey the secret key
-         * @return this builder
-         */
-        public Builder secretKey(String secretKey) {
-            this.secretKey = secretKey;
             return this;
         }
         

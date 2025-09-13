@@ -1,16 +1,18 @@
 package com.slatedb
 
+import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 import com.slatedb.config.AWSConfig
+import com.slatedb.config.Provider
 import com.slatedb.config.SlateDBOptions
 import com.slatedb.config.StoreConfig
-import com.slatedb.config.Provider
 import spock.lang.Requires
 import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Tag
 import spock.lang.Timeout
+
 // SlateDB imports
 
 /**
@@ -30,8 +32,9 @@ import spock.lang.Timeout
  * - AWS_SECRET_ACCESS_KEY
  */
 @Tag("e2e")
+@Requires({ hasAwsCredentials() })
 @Timeout(value = 5, unit = TimeUnit.MINUTES)
-class E2ESlateDBSpec extends Specification {
+class SlateDBS3Test extends Specification {
 
     @Shared
     String s3Bucket
@@ -62,24 +65,13 @@ class E2ESlateDBSpec extends Specification {
             .provider(Provider.AWS)
             .aws(awsConfig)
             .build()
-            
-        println "E2E Test Configuration:"
-        println "  S3 Bucket: ${s3Bucket}"
-        println "  AWS Region: ${awsRegion}"
-        println "  Key Prefix: ${testKeyPrefix}"
     }
     
-    def cleanupSpec() {
-        // Note: In a real scenario, you might want to clean up test data
-        // For now, we rely on the unique key prefix per test run
-        println "E2E tests completed. Test data in S3 under prefix: ${testKeyPrefix}"
-    }
-
     def "should open and close SlateDB with local backend"() {
         given: "SlateDB options for local backend"
         def localStoreConfig = StoreConfig.local()
         def options = SlateDBOptions.builder()
-            .flushInterval(java.time.Duration.ofMillis(1000))
+            .flushInterval(Duration.ofMillis(1000))
             .build()
             
         when: "opening SlateDB with local configuration"
@@ -92,11 +84,10 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should open and close SlateDB with S3 backend"() {
         given: "SlateDB options for S3 backend"
         def options = SlateDBOptions.builder()
-            .flushInterval(java.time.Duration.ofMillis(1000))
+            .flushInterval(Duration.ofMillis(1000))
             .build()
             
         when: "opening SlateDB with S3 configuration"
@@ -109,7 +100,6 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should perform basic CRUD operations with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
@@ -145,7 +135,6 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should handle write batches with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
@@ -178,7 +167,6 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should iterate over keys with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
@@ -222,7 +210,6 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should handle large values with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder().build()
@@ -244,11 +231,10 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should handle concurrent operations with S3 backend"() {
         given: "an opened SlateDB instance with S3 backend"
         def options = SlateDBOptions.builder()
-            .flushInterval(java.time.Duration.ofMillis(500))  // More frequent flushes for concurrency test
+            .flushInterval(Duration.ofMillis(500))  // More frequent flushes for concurrency test
             .build()
         def db = SlateDB.open("${testKeyPrefix}/concurrent-${System.currentTimeMillis()}", storeConfig, options)
         
@@ -295,7 +281,6 @@ class E2ESlateDBSpec extends Specification {
         db?.close()
     }
 
-    @Requires({ hasAwsCredentials() })
     def "should persist data across database reopenings with S3 backend"() {
         given: "a database path and test data"
         def dbPath = "${testKeyPrefix}/persist-${System.currentTimeMillis()}"

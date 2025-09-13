@@ -1,7 +1,6 @@
 plugins {
     id 'java-library'
     id 'groovy'
-    id 'maven-publish'
 }
 
 group = 'com.slatedb'
@@ -119,6 +118,11 @@ test {
     // Test configuration
     systemProperty 'java.library.path', file('src/main/resources/native').absolutePath
     
+    // Set environment variables for E2E tests
+    environment 'AWS_ACCESS_KEY_ID', findProperty('slatedb.test.aws.accessKey') ?: System.getenv('AWS_ACCESS_KEY_ID') 
+    environment 'AWS_SECRET_ACCESS_KEY', findProperty('slatedb.test.aws.secretKey') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
+    environment 'AWS_DEFAULT_REGION', findProperty('slatedb.test.aws.region') ?: 'eu-west-2'
+    
     // Test output
     testLogging {
         events "passed", "skipped", "failed"
@@ -179,58 +183,12 @@ clean {
     }
 }
 
-// Source and target compatibility
-compileJava {
-    sourceCompatibility = '24'
-    targetCompatibility = '24'
-}
-
-compileTestJava {
-    sourceCompatibility = '24'
-    targetCompatibility = '24'
-}
-
 // Javadoc configuration
 javadoc {
     options.addStringOption('-enable-preview', '-quiet')
     
     if (JavaVersion.current().isJava9Compatible()) {
         options.addBooleanOption('html5', true)
-    }
-}
-
-// Publishing configuration
-publishing {
-    publications {
-        maven(MavenPublication) {
-            from components.java
-            
-            pom {
-                name = 'SlateDB Java Client'
-                description = 'Java client for SlateDB key-value database using Foreign Function Interface'
-                url = 'https://github.com/slatedb/slatedb'
-                
-                licenses {
-                    license {
-                        name = 'Apache License 2.0'
-                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
-                    }
-                }
-                
-                developers {
-                    developer {
-                        name = 'SlateDB Team'
-                        url = 'https://github.com/slatedb'
-                    }
-                }
-                
-                scm {
-                    connection = 'scm:git:https://github.com/slatedb/slatedb.git'
-                    developerConnection = 'scm:git:ssh://github.com/slatedb/slatedb.git'
-                    url = 'https://github.com/slatedb/slatedb'
-                }
-            }
-        }
     }
 }
 
