@@ -1,5 +1,8 @@
 # SlateDB Java Client
 
+> [!NOTE]
+> This is an early version of the SlateDB Java client. The API is subject to change and the project is under active development. Use with caution in production environments.
+
 A high-performance Java client for [SlateDB](https://slatedb.io/), a cloud-native embedded storage engine built for modern applications. This client provides a type-safe, idiomatic Java API using Java 24's Foreign Function Interface (FFI) to integrate with SlateDB's native Go bindings.
 
 ## Features
@@ -191,8 +194,6 @@ StoreConfig local = StoreConfig.local();
 AWSConfig awsConfig = AWSConfig.builder()
     .bucket("bucket-name")
     .region("us-east-1")
-    .accessKey("access-key")     // Optional, uses env vars if not set
-    .secretKey("secret-key")     // Optional, uses env vars if not set
     .build();
 
 StoreConfig s3 = StoreConfig.builder()
@@ -351,25 +352,61 @@ cd slatedb-java
 ./gradlew build
 ```
 
+**Prerequisites:**
+- Java 24+ with Amazon Corretto distribution
+- **Either**:
+  - Access to upstream SlateDB Go bindings at `../slatedb-upstream/slatedb-go/` (for building from source)
+  - **Or** a pre-compiled native library placed in `src/main/resources/native/`
+- Rust and Cargo (only needed if building Go bindings from source)
+
+**Native Library Management:**
+- Native libraries are generated and stored in `src/main/resources/native/` (not committed to git)
+- Build automatically compiles from upstream SlateDB Go project if available
+- For clean environments without upstream, you need either:
+  1. Access to upstream SlateDB Go project at `../slatedb-upstream/slatedb-go/`
+  2. A pre-compiled native library for your platform
+- Build will fail with clear instructions if neither is available
+
+**CI/CD:**
+- GitHub Actions workflow runs on every push/PR
+- **Automatically downloads upstream SlateDB project** from https://github.com/slatedb/slatedb
+- Builds native Go bindings from source in CI environment
+- Automatic testing with Java 24
+- E2E tests run when AWS credentials are available (via repository secrets)
+- Build artifacts uploaded for successful builds
+- Separate test and build jobs with proper dependency management
+
 ### Running Tests
 
 ```bash
-# Unit tests
+# Run all tests (unit + E2E)
 ./gradlew test
+```
 
-# E2E tests (requires AWS credentials)
+**Test Configuration:**
+- **Unit tests**: Always run against local filesystem backend
+- **E2E tests**: Run against real AWS S3 when credentials are available
+- **Smart execution**: E2E tests automatically skip if AWS credentials not found
+- AWS credentials can be set via environment variables or gradle properties
+- S3 bucket and region configured in `gradle.properties`
+
+**AWS Configuration:**
+```bash
+# Environment variables (recommended)
 export AWS_ACCESS_KEY_ID=your-key
 export AWS_SECRET_ACCESS_KEY=your-secret
-./gradlew e2eTest
+export AWS_DEFAULT_REGION=eu-west-2
+```
+
+**Gradle Properties (gradle.properties):**
+```properties
+slatedb.test.s3.bucket=your-s3-bucket
+slatedb.test.aws.region=eu-west-2
 ```
 
 ## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Support
 

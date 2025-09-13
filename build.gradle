@@ -38,8 +38,9 @@ dependencies {
 }
 
 // Go bindings library integration  
-def slatedbGoPath = '../slatedb-upstream/slatedb-go'
-def workspaceTargetPath = '../slatedb-upstream/target/release'
+// Try CI path first, then fallback to local development path
+def slatedbGoPath = file('slatedb-upstream/slatedb-go').exists() ? 'slatedb-upstream/slatedb-go' : '../slatedb-upstream/slatedb-go'
+def workspaceTargetPath = file('slatedb-upstream/target/release').exists() ? 'slatedb-upstream/target/release' : '../slatedb-upstream/target/release'
 
 task buildGoBindings(type: Exec) {
     description = 'Build Go bindings native library using Cargo (if upstream available)'
@@ -73,6 +74,31 @@ task copyGoBindingsLib(type: Copy, dependsOn: buildGoBindings) {
     onlyIf { buildGoBindings.didWork || file(workspaceTargetPath).exists() }
 }
 
+task checkNativeLibrary {
+    description = 'Check if native library is available for tests'
+    doFirst {
+        def nativeDir = file('src/main/resources/native')
+        def hasLibrary = nativeDir.exists() && (
+            file("${nativeDir}/libslatedb_go.so").exists() ||
+            file("${nativeDir}/libslatedb_go.dylib").exists() ||
+            file("${nativeDir}/slatedb_go.dll").exists()
+        )
+        
+        if (!hasLibrary) {
+            def upstreamExists = file("${slatedbGoPath}/Cargo.toml").exists()
+            if (!upstreamExists) {
+                throw new GradleException(
+                    "No native library found and upstream SlateDB Go project not available.\n" +
+                    "To run tests, either:\n" +
+                    "1. Ensure upstream SlateDB Go project exists at: ${slatedbGoPath}\n" +
+                    "2. Or obtain a pre-compiled native library for your platform\n" +
+                    "\nCurrent native directory: ${nativeDir.absolutePath}"
+                )
+            }
+        }
+    }
+}
+
 // Ensure Go bindings library is built before compiling Java
 compileJava {
     dependsOn copyGoBindingsLib
@@ -96,6 +122,7 @@ compileTestJava {
 }
 
 test {
+    dependsOn checkNativeLibrary
     useJUnitPlatform()
     
     // Enable Java FFI preview features
@@ -133,48 +160,6 @@ test {
     }
 }
 
-// Separate task for E2E tests that require AWS credentials
-task e2eTest(type: Test) {
-    description = 'Run end-to-end tests with AWS S3 integration'
-    useJUnitPlatform {
-        includeTags 'e2e'
-    }
-    
-    // Inherit test configuration
-    jvmArgs test.jvmArgs
-    systemProperties test.systemProperties
-    
-    // Set environment variables for native library
-    environment 'AWS_ACCESS_KEY_ID', findProperty('slatedb.test.aws.accessKey') ?: System.getenv('AWS_ACCESS_KEY_ID') 
-    environment 'AWS_SECRET_ACCESS_KEY', findProperty('slatedb.test.aws.secretKey') ?: System.getenv('AWS_SECRET_ACCESS_KEY')
-    environment 'AWS_DEFAULT_REGION', findProperty('slatedb.test.aws.region') ?: 'eu-west-2'
-    
-    // Require AWS configuration
-    doFirst {
-        def hasAwsCreds = findProperty('slatedb.test.aws.accessKey') != null || 
-                         System.getenv('AWS_ACCESS_KEY_ID') != null
-        
-        if (!hasAwsCreds) {
-            throw new Exception(
-                'E2E tests require AWS credentials. Set via:\n' +
-                '  - System properties: -Pslatedb.test.aws.accessKey=... -Pslatedb.test.aws.secretKey=...\n' +
-                '  - Environment variables: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...'
-            )
-        }
-    }
-}
-
-// Unit tests only (exclude E2E)
-task unitTest(type: Test) {
-    description = 'Run unit tests only (no E2E tests)'
-    useJUnitPlatform {
-        excludeTags 'e2e'
-    }
-    
-    // Inherit test configuration
-    jvmArgs test.jvmArgs
-    systemProperties test.systemProperties
-}
 
 // Clean task to remove native artifacts
 clean {
@@ -183,14 +168,6 @@ clean {
     }
 }
 
-// Javadoc configuration
-javadoc {
-    options.addStringOption('-enable-preview', '-quiet')
-    
-    if (JavaVersion.current().isJava9Compatible()) {
-        options.addBooleanOption('html5', true)
-    }
-}
 
 // Wrapper task
 wrapper {
@@ -210,9 +187,7 @@ task info {
         println ""
         println "Available tasks:"
         println "  build          - Build the project"
-        println "  test           - Run all tests"
-        println "  unitTest       - Run unit tests only"
-        println "  e2eTest        - Run E2E tests (requires AWS credentials)"
+        println "  test           - Run all tests (unit + E2E)"
         println "  buildGoBindings - Build Go bindings native library"
         println "  clean          - Clean build artifacts"
         println ""

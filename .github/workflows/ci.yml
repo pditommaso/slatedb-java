@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+      - '!refs/tags/.*'
+    tags-ignore:
+      - "**"
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java: [24]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Checkout upstream SlateDB project
+      uses: actions/checkout@v4
+      with:
+        repository: slatedb/slatedb
+        path: slatedb-upstream
+        submodules: recursive
+    
+    - name: Setup Java JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java }}
+        distribution: 'temurin'
+    
+    - name: Install Rust and Cargo
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+    
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+    
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          slatedb-upstream/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('slatedb-upstream/**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Verify upstream SlateDB Go bindings
+      run: |
+        echo "Checking for SlateDB Go bindings..."
+        if [ -d "slatedb-upstream/slatedb-go" ]; then
+          echo "✅ SlateDB Go bindings found at: slatedb-upstream/slatedb-go"
+          ls -la slatedb-upstream/slatedb-go/
+        else
+          echo "❌ SlateDB Go bindings not found - this should not happen in CI"
+          ls -la slatedb-upstream/
+          exit 1
+        fi
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Go bindings and run tests
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: eu-west-2
+      run: |
+        echo "Building Go bindings from upstream SlateDB project..."
+        ./gradlew buildGoBindings --no-daemon --stacktrace
+        echo "Running all tests..."
+        if [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+          echo "AWS credentials available - E2E tests will run alongside unit tests"
+        else
+          echo "AWS credentials not available - E2E tests will be skipped automatically via @Requires annotations"
+        fi
+        ./gradlew test --no-daemon --stacktrace
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-java-${{ matrix.java }}
+        path: |
+          build/reports/tests/
+          build/test-results/
+        retention-days: 7
+...
