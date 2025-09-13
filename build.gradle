@@ -108,11 +108,11 @@ test {
                    findProperty('slatedb.test.aws.region') ?: 'us-east-1'
     
     // AWS credentials from environment or properties
-    if (findProperty('slatedb.test.aws.access.key')) {
-        systemProperty 'slatedb.test.aws.access.key', findProperty('slatedb.test.aws.access.key')
+    if (findProperty('slatedb.test.aws.accessKey')) {
+        systemProperty 'slatedb.test.aws.accessKey', findProperty('slatedb.test.aws.accessKey')
     }
-    if (findProperty('slatedb.test.aws.secret.key')) {
-        systemProperty 'slatedb.test.aws.secret.key', findProperty('slatedb.test.aws.secret.key')
+    if (findProperty('slatedb.test.aws.secretKey')) {
+        systemProperty 'slatedb.test.aws.secretKey', findProperty('slatedb.test.aws.secretKey')
     }
     
     // Test configuration
@@ -141,13 +141,13 @@ task e2eTest(type: Test) {
     
     // Require AWS configuration
     doFirst {
-        def hasAwsCreds = findProperty('slatedb.test.aws.access.key') != null || 
+        def hasAwsCreds = findProperty('slatedb.test.aws.accessKey') != null || 
                          System.getenv('AWS_ACCESS_KEY_ID') != null
         
         if (!hasAwsCreds) {
             throw new Exception(
                 'E2E tests require AWS credentials. Set via:\n' +
-                '  - System properties: -Pslatedb.test.aws.access.key=... -Pslatedb.test.aws.secret.key=...\n' +
+                '  - System properties: -Pslatedb.test.aws.accessKey=... -Pslatedb.test.aws.secretKey=...\n' +
                 '  - Environment variables: AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...'
             )
         }
@@ -255,6 +255,6 @@ task info {
         println "E2E Test Configuration:"
         println "  S3 Bucket: ${findProperty('slatedb.test.s3.bucket') ?: 'slatedb-sdk-dev'}"
         println "  AWS Region: ${findProperty('slatedb.test.aws.region') ?: 'us-east-1'}"
-        println "  AWS Creds: ${findProperty('slatedb.test.aws.access.key') ? 'Configured' : 'Not configured'}"
+        println "  AWS Creds: ${findProperty('slatedb.test.aws.accessKey') ? 'Configured' : 'Not configured'}"
     }
 }

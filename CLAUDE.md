@@ -309,8 +309,8 @@ public class TestConfig {
     public static AWSConfig getTestAWSConfig() {
         String bucket = getProperty("slatedb.test.s3.bucket", "slatedb-sdk-dev");
         String region = getProperty("slatedb.test.aws.region", "us-east-1");
-        String accessKey = getProperty("slatedb.test.aws.access.key", null);
-        String secretKey = getProperty("slatedb.test.aws.secret.key", null);
+        String accessKey = getProperty("slatedb.test.aws.accessKey", null);
+        String secretKey = getProperty("slatedb.test.aws.secretKey", null);
         
         return AWSConfig.builder()
             .bucket(bucket)
