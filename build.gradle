@@ -74,6 +74,10 @@ task copyGoBindingsLib(type: Copy, dependsOn: buildGoBindings) {
     onlyIf { buildGoBindings.didWork || file(workspaceTargetPath).exists() }
 }
 
+sourcesJar {
+    dependsOn copyGoBindingsLib
+}
+
 task checkNativeLibrary {
     description = 'Check if native library is available for tests'
     doFirst {
@@ -168,6 +172,14 @@ clean {
     }
 }
 
+// Javadoc configuration
+javadoc {
+    options.addStringOption('-enable-preview', '-quiet')
+    options.addStringOption('-source', '24')
+    options.addStringOption('Xdoclint:none', '-quiet')
+    options.addBooleanOption('html5', true)
+    failOnError = false
+}
 
 // Wrapper task
 wrapper {

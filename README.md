@@ -1,9 +1,9 @@
 # SlateDB Java Client
 
+A high-performance Java client for [SlateDB](https://slatedb.io/), a cloud-native embedded storage engine built for modern applications. This client provides a type-safe, idiomatic Java API using Java 24's Foreign Function Interface (FFI) to integrate with SlateDB's native Go bindings.
+
 > [!NOTE]
 > This is an early version of the SlateDB Java client. The API is subject to change and the project is under active development. Use with caution in production environments.
-
-A high-performance Java client for [SlateDB](https://slatedb.io/), a cloud-native embedded storage engine built for modern applications. This client provides a type-safe, idiomatic Java API using Java 24's Foreign Function Interface (FFI) to integrate with SlateDB's native Go bindings.
 
 ## Features
 
@@ -20,17 +20,19 @@ A high-performance Java client for [SlateDB](https://slatedb.io/), a cloud-nativ
 - **Gradle 8.0+**
 - **AWS credentials** (for S3 backend usage)
 
-## Installation
+## Quick Start
 
-Add the dependency to your `build.gradle`:
+Clone this this
 
-```gradle
-dependencies {
-    implementation 'com.slatedb:slatedb-java:0.1.0'
-}
+```bash
+git clone https://github.com/pditommaso/slatedb-java && cd slatedb-java
 ```
 
-## Quick Start
+Build using
+
+```
+./gradlew assemble
+```
 
 ### Local Storage Example
 
@@ -407,12 +409,6 @@ slatedb.test.aws.region=eu-west-2
 ## License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
-
-## Support
-
-- **Documentation**: [SlateDB Documentation](https://slatedb.io/docs)
-- **Issues**: [GitHub Issues](https://github.com/slatedb/slatedb-java/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/slatedb/slatedb-java/discussions)
 
 ## Acknowledgments
 
