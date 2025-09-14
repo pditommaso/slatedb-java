@@ -1,5 +1,7 @@
 package com.slatedb
 
+import java.time.Duration
+
 import com.slatedb.config.*
 import com.slatedb.exceptions.*
 import spock.lang.Specification
@@ -42,10 +44,9 @@ class SlateDBTest extends Specification {
         
         when:
         db.put(key, value)
-        def result = db.get(key)
-        
+
         then:
-        result == value
+        db.get(key) == value
         
         cleanup:
         db?.close()
@@ -57,10 +58,10 @@ class SlateDBTest extends Specification {
         
         when:
         def result = db.get("non-existent".bytes)
-        
+
         then:
         result == null
-        
+
         cleanup:
         db?.close()
     }
@@ -181,14 +182,36 @@ class SlateDBTest extends Specification {
         def db = createTestDB()
         def key = "ttl-key".bytes
         def value = "ttl-value".bytes
-        def putOptions = PutOptions.expireAfter(java.time.Duration.ofHours(1))
+        def putOptions = PutOptions.expireAfter(Duration.ofHours(1))
         
         when:
         db.put(key, value, putOptions, null)
-        def result = db.get(key)
-        
+
         then:
-        result == value
+        db.get(key) == value
+        
+        cleanup:
+        db?.close()
+    }
+
+    def "should handle put options with expireAfter eviction"() {
+        given:
+        def db = createTestDB()
+        def key = "short-ttl-key".bytes
+        def value = "short-ttl-value".bytes
+        def putOptions = PutOptions.expireAfter(1000) // 1 second TTL for more predictable timing
+        
+        when: "putting value with TTL"
+        db.put(key, value, putOptions, null)
+
+        then: "value should be available immediately"
+        db.get(key) == value
+        
+        when: "waiting for TTL to expire"
+        sleep(1200) // Wait longer than TTL
+
+        then: "value should be evicted after TTL expires"
+        db.get(key) == null
         
         cleanup:
         db?.close()
@@ -203,10 +226,9 @@ class SlateDBTest extends Specification {
         
         when:
         db.put(key, value)
-        def result = db.get(key, readOptions)
-        
+
         then:
-        result == value
+        db.get(key, readOptions) == value
         
         cleanup:
         db?.close()
@@ -228,6 +250,18 @@ class SlateDBTest extends Specification {
         then:
         iterator != null
         !iterator.isClosed()
+        and:
+        // Should find exactly the 3 keys with "prefix:" prefix in sorted order
+        iterator.hasNext()
+        new String(iterator.next().key) == "prefix:key1"
+        and:
+        iterator.hasNext()
+        new String(iterator.next().key) == "prefix:key2"
+        and:
+        iterator.hasNext()
+        new String(iterator.next().key) == "prefix:key3"
+        and:
+        !iterator.hasNext() // No more keys should be found
         
         cleanup:
         iterator?.close()
@@ -240,11 +274,11 @@ class SlateDBTest extends Specification {
         
         when:
         db.put("flush-test".bytes, "flush-value".bytes)
+        and:
         db.flush()
-        def result = db.get("flush-test".bytes)
         
         then:
-        result == "flush-value".bytes
+        db.get("flush-test".bytes) == "flush-value".bytes
         
         cleanup:
         db?.close()
@@ -303,12 +337,12 @@ class SlateDBTest extends Specification {
         given:
         def options = SlateDBOptions.builder()
                 .l0SstSizeBytes(64L * 1024 * 1024) // 64MB
-                .flushInterval(java.time.Duration.ofMillis(100))
+                .flushInterval(Duration.ofMillis(100))
                 .build()
         
         expect:
         options.getL0SstSizeBytes() == 64L * 1024 * 1024
-        options.getFlushInterval() == java.time.Duration.ofMillis(100)
+        options.getFlushInterval() == Duration.ofMillis(100)
     }
     
     def "should create AWS config with builder pattern"() {
@@ -325,7 +359,7 @@ class SlateDBTest extends Specification {
     
     def "should create put options with builder pattern"() {
         given:
-        def ttlDuration = java.time.Duration.ofHours(24)
+        def ttlDuration = Duration.ofHours(24)
         def putOptions = PutOptions.expireAfter(ttlDuration)
         
         expect:

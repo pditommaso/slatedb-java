@@ -112,24 +112,21 @@ class SlateDBS3Test extends Specification {
         db.flush() // Ensure data is available for S3 backend
         
         then: "the value should be retrievable"
-        def retrievedValue = db.get(key1)
-        Arrays.equals(retrievedValue, value1)
-        
+        db.get(key1) == value1
+
         when: "updating the value"
         def updatedValue1 = "updated-value-1".getBytes()
         db.put(key1, updatedValue1)
         db.flush() // Ensure updated data is available
         
         then: "the updated value should be retrievable"
-        def newRetrievedValue = db.get(key1)
-        Arrays.equals(newRetrievedValue, updatedValue1)
-        
+        db.get(key1) == updatedValue1
+
         when: "deleting the key"
         db.delete(key1)
         
         then: "the key should no longer exist"
-        def deletedValue = db.get(key1)
-        deletedValue == null
+        db.get(key1) == null
         
         cleanup:
         db?.close()
@@ -158,10 +155,10 @@ class SlateDBS3Test extends Specification {
         db.write(batch)
         
         then: "the batch operations should be applied correctly"
-        Arrays.equals(db.get(key1), value1)
+        db.get(key1) == value1
         db.get(key2) == null  // Should be deleted
-        Arrays.equals(db.get(key3), value3)
-        
+        db.get(key3) == value3
+
         cleanup:
         batch?.close()
         db?.close()
@@ -297,9 +294,8 @@ class SlateDBS3Test extends Specification {
         def db2 = SlateDB.open(dbPath, storeConfig, options)
         
         then: "the data should still be present"
-        def retrievedValue = db2.get(testKey)
-        Arrays.equals(retrievedValue, testValue)
-        
+        db2.get(testKey) == testValue
+
         cleanup:
         db2?.close()
     }
